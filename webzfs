@@ -1,0 +1,139 @@
+#!/bin/sh
+
+# PROVIDE: webzfs
+# REQUIRE: LOGIN DAEMON NETWORKING
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="webzfs"
+rcvar="webzfs_enable"
+
+# WebZFS installation directory
+webzfs_dir="/opt/webzfs"
+
+pidfile="${webzfs_dir}/webzfs.pid"
+
+# Custom start/stop commands
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+status_cmd="${name}_status"
+
+# Helper function to get socket path from .env BIND variable
+get_socket_path()
+{
+    local bind_value
+    # Source the .env file if it exists
+    if [ -f "${webzfs_dir}/.env" ]; then
+        bind_value=$(grep -E '^BIND=' "${webzfs_dir}/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    fi
+    # Check if BIND starts with "unix:"
+    case "$bind_value" in
+        unix:*)
+            echo "${bind_value#unix:}"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+webzfs_start()
+{
+    # Clean up stale pidfile if process is not running
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile} 2>/dev/null)
+        if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+            rm -f ${pidfile}
+        else
+            echo "${name} already running with pid ${pid}."
+            return 1
+        fi
+    fi
+
+    # Verify the venv exists
+    if [ ! -f "${webzfs_dir}/.venv/bin/gunicorn" ]; then
+        echo "Error: gunicorn not found. Please run the installer again."
+        return 1
+    fi
+
+    # Handle unix socket directory creation
+    socket_path=$(get_socket_path)
+    if [ -n "$socket_path" ]; then
+        socket_dir=$(dirname "$socket_path")
+        # Create socket directory with 0755 permissions
+        if [ ! -d "$socket_dir" ]; then
+            echo "Creating socket directory: $socket_dir"
+            mkdir -p "$socket_dir"
+            chmod 0755 "$socket_dir"
+        fi
+        # Clean up stale socket file
+        if [ -e "$socket_path" ]; then
+            rm -f "$socket_path"
+        fi
+    fi
+ echo "Starting ${name}."
+    # Start the service as root
+    cd ${webzfs_dir} && ${webzfs_dir}/webzfs_service.sh >> ${webzfs_dir}/gunicorn.log 2>&1 &
+
+    # Give it a moment to start and write PID
+    sleep 2
+
+    # Check if it started
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile} 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "${name} started with pid ${pid}."
+            return 0
+        fi
+    fi
+
+    echo "${name} failed to start. Check ${webzfs_dir}/gunicorn.log for details."
+    return 1
+}
+webzfs_stop()
+{
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile} 2>/dev/null)
+        if [ -n "$pid" ]; then
+            echo "Stopping ${name}."
+            kill -TERM "$pid" 2>/dev/null
+            # Wait for process to stop
+            for i in 1 2 3 4 5; do
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    break
+                fi
+                sleep 1
+            done
+            # Force kill if still running
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -KILL "$pid" 2>/dev/null
+            fi
+            echo "${name} stopped."
+        fi
+        rm -f ${pidfile}
+    else
+        echo "${name} is not running."
+    fi
+
+    # Clean up unix socket if configured
+    socket_path=$(get_socket_path)
+    if [ -n "$socket_path" ] && [ -e "$socket_path" ]; then
+        rm -f "$socket_path"
+    fi
+}
+webzfs_status()
+{
+    if [ -f ${pidfile} ]; then
+        pid=$(cat ${pidfile} 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "${name} is running as pid ${pid}."
+            return 0
+        fi
+    fi
+    echo "${name} is not running."
+    return 1
+}
+
+load_rc_config $name
+run_rc_command "$1"
