@@ -29,7 +29,7 @@ PYTHON_TAG="cp312"
 
 # Wheel packages to download (these require compilation without pre-built wheels)
 # Versions must match the pins in requirements.txt.
-WHEEL_PACKAGES="cryptography-49.0.0 markupsafe-3.0.3 psutil-7.2.2 pydantic_core-2.46.4 bcrypt-5.0.0 cffi-2.1.0 pynacl-1.6.2"
+WHEEL_PACKAGES="cryptography-50.0.2 markupsafe-3.0.3 psutil-7.2.2 pydantic_core-2.46.4 bcrypt-5.0.0 cffi-2.1.0 pynacl-1.6.2"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -359,10 +359,10 @@ for pkg_version in $WHEEL_PACKAGES; do
     version=$(echo "$pkg_version" | sed 's/.*-//')
     wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
 
-    # Determine ABI tag - cryptography publishes abi3 wheels tagged
-    # cp311-abi3 (compatible with 3.11+), others use cp312-cp312
+    # Determine ABI tag - cryptography ships an abi3 wheel tagged with the
+    # Python version the wheel set was built with; others use cp312-cp312
     if [ "$pkg_name" = "cryptography" ]; then
-        ABI_TAG="cp311-abi3"
+        ABI_TAG="${PYTHON_TAG}-abi3"
     else
         ABI_TAG="${PYTHON_TAG}-${PYTHON_TAG}"
     fi

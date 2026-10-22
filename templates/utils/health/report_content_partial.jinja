@@ -1,6 +1,11 @@
 {# Report content partial - returned by HTMX polling during analysis #}
 {# When still running, includes hx-get to keep polling. When done, static. #}
 
+{# On HTMX responses only, fill the header download slot once the report is no longer running. #}
+{% if download_oob and report.status != 'running' %}
+<span id="report-download-slot" hx-swap-oob="true">{% include "utils/health/_download_link.jinja" %}</span>
+{% endif %}
+
 {% if report.status == 'running' %}
 <!-- Running: progress indicator with polling -->
 <div hx-get="/utils/health/report/{{ report.id }}/content-partial"

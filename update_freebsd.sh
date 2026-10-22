@@ -32,7 +32,11 @@ WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
 # the versions pinned at install time; whenever requirements.txt bumps a
 # pinned version, the update must fetch the matching new wheels or pip
 # silently falls back to compiling from source.
-WHEEL_PACKAGES="cryptography-49.0.0 markupsafe-3.0.3 psutil-7.2.2 pydantic_core-2.46.4 bcrypt-5.0.0 cffi-2.1.0 pynacl-1.6.2"
+WHEEL_PACKAGES="cryptography-50.0.2 markupsafe-3.0.3 psutil-7.2.2 pydantic_core-2.46.4 bcrypt-5.0.0 cffi-2.1.0 pynacl-1.6.2"
+
+# FreeBSD releases that WebZFS no longer supports (space-separated).
+# Keep in sync with install_freebsd.sh.
+EOL_FREEBSD_VERSIONS="13.5 14.3 15.0"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -46,6 +50,31 @@ NC='\033[0m' # No Color
 # Function to check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Function to stop on FreeBSD releases listed in EOL_FREEBSD_VERSIONS
+# unless the user explicitly chooses to continue.
+check_eol_freebsd() {
+    RELEASE_STRING=$(freebsd-version -u 2>/dev/null || uname -r)
+    RELEASE_NUMBER=${RELEASE_STRING%%-*}
+    for eol_version in $EOL_FREEBSD_VERSIONS; do
+        if [ "$RELEASE_NUMBER" = "$eol_version" ]; then
+            printf "${RED}Error: FreeBSD ${RELEASE_NUMBER} has been EOL'd by the WebZFS project.${NC}\n"
+            echo "Detected release: ${RELEASE_STRING}"
+            echo "Unsupported releases: ${EOL_FREEBSD_VERSIONS}"
+            echo "Please update this system to a supported FreeBSD release before proceeding."
+            echo
+            printf "Continue anyway on an unsupported release? (y/n): "
+            read -r REPLY
+            if [ "$REPLY" != "y" ] && [ "$REPLY" != "Y" ]; then
+                echo "Update aborted. No changes were made."
+                exit 1
+            fi
+            printf "${YELLOW}Continuing on unsupported FreeBSD ${RELEASE_NUMBER}.${NC}\n"
+            echo
+            return 0
+        fi
+    done
 }
 
 # Function to find the target Python interpreter.
@@ -82,9 +111,16 @@ detect_freebsd_version() {
             WHEEL_SUBDIR="freebsd14-4"
             WHEEL_PLATFORM="freebsd_14_4_release_p1_amd64"
             ;;
+        14.5)
+            WHEEL_SUBDIR="freebsd14-5"
+            WHEEL_PLATFORM="freebsd_14_5_release_p2_amd64"
+            ;;
         15.0)
-            WHEEL_SUBDIR="freebsd15-0"
-            WHEEL_PLATFORM="freebsd_15_0_release_amd64"
+            # FreeBSD 15.0 is EOL and its wheel set is frozen at older pins.
+            # Fall back to the 15.1 wheels, which are ABI compatible.
+            printf "${YELLOW}Warning: FreeBSD 15.0 is EOL. Falling back to FreeBSD 15.1 wheels.${NC}\n"
+            WHEEL_SUBDIR="freebsd15-1"
+            WHEEL_PLATFORM="freebsd_15_1_release_p1_amd64"
             ;;
         15.1)
             WHEEL_SUBDIR="freebsd15-1"
@@ -124,12 +160,12 @@ download_wheels() {
         version=$(echo "$pkg_version" | sed 's/.*-//')
         wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
 
-        # cryptography publishes a stable-ABI (abi3) wheel tagged cp311-abi3
-        # (compatible with Python 3.11+). All other packages ship
+        # cryptography ships a stable-ABI (abi3) wheel tagged with the Python
+        # version the wheel set was built with. All other packages ship
         # version-specific wheels for the target ABI.
         case "$pkg_name" in
             cryptography)
-                ABI_TAG="cp311-abi3"
+                ABI_TAG="${TARGET_PYTHON_TAG}-abi3"
                 ;;
             *)
                 ABI_TAG="${TARGET_PYTHON_TAG}-${TARGET_PYTHON_TAG}"
@@ -173,6 +209,8 @@ if [ "$(id -u)" -ne 0 ]; then
     echo "Please run: sudo $0"
     exit 1
 fi
+
+check_eol_freebsd
 
 # Verify installation exists
 if [ ! -d "$INSTALL_DIR" ]; then

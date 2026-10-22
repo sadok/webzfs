@@ -28,6 +28,20 @@ except ImportError:
 wsgi_app = "config.asgi:app"
 worker_class = "uvicorn.workers.UvicornWorker"
 
+# Reverse proxy header trust.
+#
+# UvicornWorker passes this value to Uvicorn, which only honors
+# X-Forwarded-Proto and X-Forwarded-For when the connecting peer is listed
+# here. Gunicorn reads its own default from the environment at import time,
+# before the .env file above is loaded, so the value must be assigned
+# explicitly for FORWARDED_ALLOW_IPS in .env to take effect.
+#
+# The default trusts loopback only. Add the IP or CIDR of a reverse proxy
+# that connects from another host or container network, for example
+# "127.0.0.1,::1,172.18.0.0/16". Never use "*" unless only trusted proxies
+# can reach the WebZFS listener; forwarded headers are client-controlled.
+forwarded_allow_ips = os.getenv('FORWARDED_ALLOW_IPS', '127.0.0.1,::1')
+
 # Port 26619: Z(26th letter) F(6th letter) S(19th letter) = ZFS
 #
 # Bind configuration is read from /opt/webzfs/.env (or the process

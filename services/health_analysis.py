@@ -125,6 +125,19 @@ class HealthAnalysisService:
                 return report
         return None
 
+    def export_report(self, report_id: str) -> Optional[Tuple[str, str]]:
+        """Return (filename, json_text) for downloading a single report.
+
+        The filename embeds the report id, which is the report start time in
+        YYYYMMDD-HHMMSS form. Returns None if the report does not exist.
+        """
+        report = self.get_report(report_id)
+        if not report:
+            return None
+        safe_id = re.sub(r"[^A-Za-z0-9_-]", "", str(report.get("id", ""))) or "unknown"
+        filename = f"webzfs-health-report-{safe_id}.json"
+        return filename, json.dumps(report, indent=2) + "\n"
+
     def delete_report(self, report_id: str) -> bool:
         """Delete a report by id (date-based string)."""
         with self._lock:
