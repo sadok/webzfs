@@ -241,6 +241,34 @@ sudo systemctl restart nginx        # or caddy, etc.
 
 Alternatively, set `SOCKET_UMASK=0o000` in `.env` to allow any user to connect (less secure, but simpler).
 
+### Reverse Proxy / HTTPS Configuration
+
+WebZFS renders its own stylesheets and scripts with root-relative `/static/...` paths, so pages served through an HTTPS reverse proxy (nginx, Caddy, Nginx Proxy Manager) load their assets over the same scheme as the page. No extra configuration is needed to avoid mixed-content errors.
+
+The proxy should still forward the original scheme and client address so that WebZFS sees accurate request metadata. A typical nginx location block includes:
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+WebZFS only honors `X-Forwarded-Proto` and `X-Forwarded-For` from trusted proxy peers. By default only loopback (`127.0.0.1` and `::1`) is trusted, which covers a proxy running on the same host. If the proxy connects from another host or a container network (for example Nginx Proxy Manager in Docker), add that proxy's address or the smallest appropriate CIDR in `/opt/webzfs/.env`:
+
+```bash
+FORWARDED_ALLOW_IPS=127.0.0.1,::1,172.18.0.0/16
+```
+
+The `172.18.0.0/16` value is only an example; use the network actually assigned to your proxy. Do not set `FORWARDED_ALLOW_IPS=*` on a listener that other systems can reach, because forwarded headers are ordinary request headers and any client could then assert its own scheme and address.
+
+Restart WebZFS after changing `.env`:
+
+```bash
+sudo systemctl restart webzfs          # Linux
+sudo service webzfs restart            # FreeBSD
+```
+
 ### Gunicorn Configuration
 
 Advanced server settings can be configured in `config/gunicorn.conf.py`:

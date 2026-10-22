@@ -20,7 +20,11 @@ WHEELS_REPO_BASE="https://github.com/webzfs/webzfs-wheels/raw/main/wheelhouse"
 
 # Wheel packages to download (these require compilation without pre-built wheels)
 # Versions must match the pins in requirements.txt.
-WHEEL_PACKAGES="cryptography-49.0.0 markupsafe-3.0.3 psutil-7.2.2 pydantic_core-2.46.4 bcrypt-5.0.0 cffi-2.1.0 pynacl-1.6.2"
+WHEEL_PACKAGES="cryptography-50.0.2 markupsafe-3.0.3 psutil-7.2.2 pydantic_core-2.46.4 bcrypt-5.0.0 cffi-2.1.0 pynacl-1.6.2"
+
+# FreeBSD releases that WebZFS no longer supports (space-separated).
+# Keep in sync with update_freebsd.sh.
+EOL_FREEBSD_VERSIONS="13.5 14.3 15.0"
 
 # Determine the source directory (where this script is located)
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -57,6 +61,33 @@ fi
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
+
+# Function to stop on FreeBSD releases listed in EOL_FREEBSD_VERSIONS
+# unless the user explicitly chooses to continue.
+check_eol_freebsd() {
+    RELEASE_STRING=$(freebsd-version -u 2>/dev/null || uname -r)
+    RELEASE_NUMBER=${RELEASE_STRING%%-*}
+    for eol_version in $EOL_FREEBSD_VERSIONS; do
+        if [ "$RELEASE_NUMBER" = "$eol_version" ]; then
+            printf "${RED}Error: FreeBSD ${RELEASE_NUMBER} has been EOL'd by the WebZFS project.${NC}\n"
+            echo "Detected release: ${RELEASE_STRING}"
+            echo "Unsupported releases: ${EOL_FREEBSD_VERSIONS}"
+            echo "Please update this system to a supported FreeBSD release before proceeding."
+            echo
+            printf "Continue anyway on an unsupported release? (y/n): "
+            read -r REPLY
+            if [ "$REPLY" != "y" ] && [ "$REPLY" != "Y" ]; then
+                echo "Installation aborted."
+                exit 1
+            fi
+            printf "${YELLOW}Continuing on unsupported FreeBSD ${RELEASE_NUMBER}.${NC}\n"
+            echo
+            return 0
+        fi
+    done
+}
+
+check_eol_freebsd
 
 # Function to find Python 3.12 on FreeBSD
 # FreeBSD installs python312 as python3.12, not python3.
@@ -101,9 +132,16 @@ detect_freebsd_version() {
             WHEEL_SUBDIR="freebsd14-4"
             WHEEL_PLATFORM="freebsd_14_4_release_p1_amd64"
             ;;
+        14.5)
+            WHEEL_SUBDIR="freebsd14-5"
+            WHEEL_PLATFORM="freebsd_14_5_release_p2_amd64"
+            ;;
         15.0)
-            WHEEL_SUBDIR="freebsd15-0"
-            WHEEL_PLATFORM="freebsd_15_0_release_amd64"
+            # FreeBSD 15.0 is EOL and its wheel set is frozen at older pins.
+            # Fall back to the 15.1 wheels, which are ABI compatible.
+            printf "${YELLOW}Warning: FreeBSD 15.0 is EOL. Falling back to FreeBSD 15.1 wheels.${NC}\n"
+            WHEEL_SUBDIR="freebsd15-1"
+            WHEEL_PLATFORM="freebsd_15_1_release_p1_amd64"
             ;;
         15.1)
             WHEEL_SUBDIR="freebsd15-1"
@@ -142,12 +180,12 @@ download_wheels() {
         wheel_pkg_name=$(echo "$pkg_name" | tr '-' '_')
         
         # Determine ABI tag based on package.
-        # cryptography publishes a stable-ABI (abi3) wheel; from 45.x onward
-        # its minimum interpreter tag is cp311.  All other packages ship
-        # version-specific cp312 wheels.
+        # cryptography ships a stable-ABI (abi3) wheel. The WebZFS wheel sets
+        # are built with Python 3.12, so it is tagged cp312-abi3. All other
+        # packages ship version-specific cp312 wheels.
         case "$pkg_name" in
             cryptography)
-                ABI_TAG="cp311-abi3"
+                ABI_TAG="cp312-abi3"
                 ;;
             *)
                 ABI_TAG="cp312-cp312"
@@ -207,8 +245,10 @@ echo
 # smartmontools - SMART disk monitoring
 # sanoid - ZFS snapshot management (includes syncoid for replication)
 # libsodium - runtime dependency of pynacl (used by paramiko for SSH)
+# bash - shell prerequisite (not part of the FreeBSD base system)
+# rsync - file synchronization prerequisite (not part of the FreeBSD base system)
 # Note: rust, gmake are NOT needed when using pre-compiled wheels
-pkg install -y python312 py312-pip node npm smartmontools sanoid libsodium
+pkg install -y python312 py312-pip node npm smartmontools sanoid libsodium expat bash rsync
 
 if [ $? -ne 0 ]; then
     printf "${RED}Error: Failed to install required packages${NC}\n"
@@ -268,6 +308,14 @@ if ! command_exists rsync; then
 fi
 
 printf "${GREEN}✓${NC} rsync found\n"
+
+if ! command_exists bash; then
+    printf "${RED}Error: bash was not installed correctly${NC}\n"
+    echo "Install it with: pkg install bash"
+    exit 1
+fi
+
+printf "${GREEN}✓${NC} bash found\n"
 
 # Check for ZFS (should be built-in on FreeBSD)
 if ! command_exists zpool || ! command_exists zfs; then

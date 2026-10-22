@@ -6,7 +6,7 @@ Analysis runs in a background thread with HTMX polling for progress.
 """
 import threading
 from fastapi import APIRouter, Request, Depends, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from typing import Annotated, Optional
 from config.templates import templates
 from services.health_analysis import HealthAnalysisService
@@ -137,7 +137,31 @@ async def health_report_content_partial(request: Request, report_id: str):
         name="utils/health/report_content_partial.jinja",
         context={
             "report": report,
+            "download_oob": True,
         },
+    )
+
+
+@router.get("/report/{report_id}/download")
+async def download_health_report(report_id: str):
+    """Download a single health report as a date/time stamped JSON file."""
+    report = health_service.get_report(report_id)
+    if not report:
+        return PlainTextResponse(content="Report not found.", status_code=404)
+    if report.get("status") == "running":
+        return PlainTextResponse(
+            content="Report is still running. Download it after it completes.",
+            status_code=409,
+        )
+
+    exported = health_service.export_report(report_id)
+    if not exported:
+        return PlainTextResponse(content="Report not found.", status_code=404)
+    filename, content = exported
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

@@ -303,9 +303,13 @@ static/css/*
 !static/js/
 static/js/*
 !static/js/space_visualizer.js
+!static/js/terminal/
 
 # WebZFS runtime data
 .ssh/
 
 # Related repos
 related-repos/
+
+# Nix build results fodler
+result

@@ -77,7 +77,7 @@ The application automatically detects the operating system and adapts its behavi
 - sanoid (optional but strongly recommended)
 - rsync
 
-#### FreeBSD Package Requirements: (Automatically installed with the install script)
+#### FreeBSD Package Requirements: (Automatically installed with the install script) python312 py312-pip node npm smartmontools sanoid libsodium expat bash rsync
 #### ArchLinux Requirements:
 #### RHEL Package Requirements:
 #### Fedora Package Requirements: 
@@ -99,6 +99,8 @@ The installation script automatically:
 - Installs the application to `/opt/webzfs`
 - Installs all dependencies and builds assets
 - Configures sudo permissions
+
+See [ports/README.md](ports/README.md) for detailed information about specific distros.
 
 **FreeBSD:**
 ```bash
